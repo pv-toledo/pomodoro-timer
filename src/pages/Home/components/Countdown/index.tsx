@@ -18,7 +18,7 @@ export function Countdown() {
         if (activeCycle) {
             interval = setInterval(() => {
 
-                const secondsDifference = differenceInSeconds(new Date(), activeCycle.startDate)
+                const secondsDifference = differenceInSeconds(new Date(), new Date(activeCycle.startDate))
 
                 //Caso o total de segundos percorridos é igual ao total de segundos do ciclo, marca como completo e não atualiza mais a diferença de segundos
                 if ( secondsDifference>=totalSeconds) {
