@@ -1,68 +1,123 @@
-import { Play } from "phosphor-react";
-import { CountdownContainer, FormContainer, HomeContainer, MinutesAmountInput, Separator, StartCoutdownButton, TaskInput } from "./styles";
-import { useForm } from "react-hook-form";
-import {zodResolver} from '@hookform/resolvers/zod'
+import { HandPalm, Play } from "phosphor-react";
+import { HomeContainer, StartCountdownButton, StopCountdownButton } from "./styles";
+import { FormProvider, useForm } from "react-hook-form";
+import { zodResolver } from '@hookform/resolvers/zod'
 import * as zod from 'zod' //Usando assim pois zod não tem export default
-import { useState } from "react";
+import { createContext, useState } from "react";
+import { NewCycleForm } from "./components/NewCycleForm";
+import { Countdown } from "./components/Countdown";
 
-
-/** a função register recebe um nome e retorna várias propriedades de input como:
- * onChange ()
- * onBlur ()
- * onFocus ()
- * por isso se usa o spread operator
- */
-
-//Object é o formato de data que vem do form
-const newCycleFormValidationSchema = zod.object({
-    //Deve ser uma string, com no mínimo 1 caracter. Se não, mostra a mensagem no segundo argumento de min
-    task: zod.string().min(1, 'Informe a tarefa'),
-    minutesAmount: zod
-        .number()
-        .min(5, 'o ciclo precisa ser de no mínimo 5 minutos')
-        .max(60, 'o ciclo precisa ser de no máximo 60 minutos')
-})
-
-//Infere a tipagem do data do form a partir do schema que foi feito previamente
-type newCycleFormData = zod.infer<typeof newCycleFormValidationSchema>
 
 interface Cycle {
-    id: string;
-    task: string;
+    id: string
+    task: string
     minutesAmount: number
+    startDate: Date
+    interruptedDate?: Date
+    finishedDate?: Date
 }
 
-const [cycles, setCycles] = useState<Cycle[]>([])
-const [activeCycleId, setActiveCycleId] = useState<string | null>(null) //Começa sem ciclo ativo (null)
+interface CyclesContextType {
+    activeCycle: Cycle | undefined
+    activeCycleId: string | null
+    markCurrentCycleAsFinished: () => void
+    amountSecondPassed:number
+    setSecondsPassed: (seconds: number) => void
+}
 
-export function Home () {
+
+//Coloco no contexto um objeto que contém variáveis que serão compartilhadas entre os componentes. Pai --> Filhos
+export const CyclesContext = createContext({} as CyclesContextType)
+
+export function Home() {
+
+    const [cycles, setCycles] = useState<Cycle[]>([])
+    const [activeCycleId, setActiveCycleId] = useState<string | null>(null) //Começa sem ciclo ativo (null)
+    const [amountSecondPassed, setAmountSecondPassed] = useState(0)
+
+    /** a função register recebe um nome e retorna várias propriedades de input como:
+         * onChange ()
+         * onBlur ()
+         * onFocus ()
+         * por isso se usa o spread operator
+         */
+    
+        //Object é o formato de data que vem do form
+        const newCycleFormValidationSchema = zod.object({
+            //Deve ser uma string, com no mínimo 1 caracter. Se não, mostra a mensagem no segundo argumento de min
+            task: zod.string().min(1, 'Informe a tarefa'),
+            minutesAmount: zod
+                .number()
+                .min(5, 'o ciclo precisa ser de no mínimo 5 minutos')
+                .max(60, 'o ciclo precisa ser de no máximo 60 minutos')
+        })
+    
+        //Infere a tipagem do data do form a partir do schema que foi feito previamente
+        type newCycleFormData = zod.infer<typeof newCycleFormValidationSchema>
+
     //formState mostra os erros de validação
-    const {register, handleSubmit, watch, reset} = useForm<newCycleFormData>({
-        resolver: zodResolver(newCycleFormValidationSchema),
-        defaultValues: {
-            task: '',
-            minutesAmount: 0
-        }
-    })
+        const newCycleForm = useForm<newCycleFormData>({
+            resolver: zodResolver(newCycleFormValidationSchema),
+            defaultValues: {
+                task: '',
+                minutesAmount: 0
+            }
+        })
 
-    //data é onde eu acesso todas as informações que vêm do form
-    function handleCreateNewCycle (data: newCycleFormData) {
+    
+    const { handleSubmit, watch, reset } = newCycleForm
+    
+    const activeCycle = cycles.find((cycle) => cycle.id === activeCycleId)
+
+    function setSecondsPassed (seconds: number) {
+        setAmountSecondPassed(seconds)
+    }
+
+    function markCurrentCycleAsFinished () {
+        setCycles(state => state.map(cycle => {
+            if(cycle.id === activeCycleId) {
+                return {...cycle, finishedDate: new Date ()}
+            } else {
+                return cycle
+            }
+        }))
+    }
+
+
+    // data é onde eu acesso todas as informações que vêm do form
+    function handleCreateNewCycle(data: newCycleFormData) {
 
         const id = String(new Date().getTime())
 
         const newCycle: Cycle = {
             id,
             task: data.task,
-            minutesAmount: data.minutesAmount
+            minutesAmount: data.minutesAmount,
+            startDate: new Date() //Data atual
         }
-        
+
         setCycles((state) => [...state, newCycle])
         setActiveCycleId(id)
+
+        setAmountSecondPassed(0) //Zera a variável antes de começar um novo ciclo para não reaproveitar esse valor para o outro ciclo
 
         reset(); //Volta os campos do formulário segundo foi colocado no default values no schema
     }
 
-    const activeCycle = cycles.find((cycle) => cycle.id === activeCycleId)
+    function handleInterruptCycle () {
+
+        //Anoto dentro do ciclo que ele foi interrompido na data atual
+        setCycles(state => state.map(cycle => {
+            if(cycle.id === activeCycleId) {
+                return {...cycle, interruptedDate: new Date ()}
+            } else {
+                return cycle
+            }
+        }))
+
+        //Digo que não tenho mais nenhum ciclo ativo
+        setActiveCycleId(null)
+    }
 
     const task = watch('task') //Monitora o campo task que foi declarado no register do input task
     const isSubmitDisabled = !task
@@ -70,51 +125,31 @@ export function Home () {
     return (
         <HomeContainer>
             {/* handleSubmit do hookForm passa uma função para dentro do onSubmit do form html */}
-            <form onSubmit={handleSubmit(handleCreateNewCycle)} action=""> 
-                <FormContainer>
-                    <label htmlFor="task">Vou trabalhar em</label>
-                    <TaskInput 
-                        type="text"
-                        id="task" 
-                        placeholder="Dê um nome para o seu projeto" 
-                        list="task-suggestion"
-                        {...register('task')}
-                    />
+            <form onSubmit={handleSubmit(handleCreateNewCycle)} action="">
 
-                    <datalist id="task-suggestion">
-                        <option value="Projeto 1" />
-                        <option value="Projeto 2" />
-                        <option value="Projeto 3" />
-                    </datalist>
+                <CyclesContext.Provider 
+                    value={{activeCycle, activeCycleId, markCurrentCycleAsFinished, amountSecondPassed, setSecondsPassed}}
+                >
+                    <FormProvider {...newCycleForm}>
+                        <NewCycleForm />
+                    </FormProvider>
+                    
+                    <Countdown />
 
-                    <label htmlFor="minutesAmount">durante</label>
-                    <MinutesAmountInput 
-                        type="number" 
-                        id="minutesAmount" 
-                        placeholder="00"
-                        step={5}
-                        min={5}
-                        max={60}
-                        {...register('minutesAmount', {valueAsNumber: true})} //Para vir como número
-                    />
-
-                    <span>minutos.</span>
-                </FormContainer>
-                
-                <CountdownContainer>
-                    <span>0</span>
-                    <span>0</span>
-                    <Separator>:</Separator>
-                    <span>0</span>
-                    <span>0</span>
-                </CountdownContainer>
-
-                <StartCoutdownButton disabled={isSubmitDisabled} type="submit">
-                    <Play size={24} />
-                    Começar
-                </StartCoutdownButton>
+                </CyclesContext.Provider>
+                {activeCycle ? (
+                    <StopCountdownButton onClick={handleInterruptCycle} type="button">
+                        <HandPalm size={24} />
+                        Interromper
+                    </StopCountdownButton>
+                ) : (
+                    <StartCountdownButton disabled={isSubmitDisabled} type="submit">
+                        <Play size={24} />
+                        Começar
+                    </StartCountdownButton>
+                )}
             </form>
         </HomeContainer>
-        
+
     )
 }
